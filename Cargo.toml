@@ -1,0 +1,27 @@
+[package]
+name = "edgescan"
+description = "A VCD viewer GUI."
+authors = ["Jay Oster <jay@kodewerx.org>"]
+homepage = "https://github.com/parasyte/edgescan"
+keywords = ["vcd", "waveform", "viewer", "gui", "eda"]
+categories = ["Visualization", "Development tools", "Science"]
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+directories = "4"
+dwfv = { path = "../../other-projects/dwfv", default-features = false }
+egui = "0.20"
+egui-wgpu = { version = "0.20", features = ["winit"] }
+egui-winit = "0.20"
+env_logger = "0.10"
+error-iter = "0.3"
+log = "0.4"
+msgbox = "0.7"
+rfd = "0.10"
+ron = "0.8"
+serde = "1"
+serde_derive = "1"
+thiserror = "1"
+winit = "0.27"
+winit_input_helper = "0.13"
