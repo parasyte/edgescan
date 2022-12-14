@@ -48,6 +48,11 @@ impl Framework {
         }
     }
 
+    /// Set the window reference for `egui`.
+    ///
+    /// # Safety
+    ///
+    /// The window reference lifetime must outlive `Self`.
     pub unsafe fn set_window(&mut self, window: &Window) {
         self.painter.set_window(Some(window));
     }
@@ -62,9 +67,9 @@ impl Framework {
     }
 
     /// Resize egui.
-    pub fn resize(&mut self, width: u32, height: u32) {
+    pub fn resize(&mut self, width: u32, height: u32, scale_factor: f64) {
         if width > 0 && height > 0 {
-            self.config.set_window_size(width, height);
+            self.config.set_window_size(width, height, scale_factor);
             self.painter.on_window_resized(width, height);
         }
     }

@@ -35,6 +35,7 @@ fn run() -> Result<(), Error> {
     };
 
     let mut framework = Framework::new(&event_loop, window.scale_factor(), config);
+    let mut ready = false;
 
     event_loop.run(move |event, _, control_flow| {
         // Handle input events
@@ -51,7 +52,7 @@ fn run() -> Result<(), Error> {
 
             // Resize the window
             if let Some(size) = input.window_resized() {
-                framework.resize(size.width, size.height);
+                framework.resize(size.width, size.height, window.scale_factor());
             }
 
             // Update internal state and request a redraw
@@ -60,8 +61,10 @@ fn run() -> Result<(), Error> {
 
         match event {
             Event::NewEvents(StartCause::Init) => {
-                // SAFETY: `window` is guaranteed to live at least as long as the `event_loop` run scope.
+                // SAFETY: `window` is guaranteed to live at least as long as the
+                // `event_loop` run scope.
                 unsafe { framework.set_window(&window) };
+                ready = true;
             }
             Event::WindowEvent { event, .. } => {
                 // Update egui inputs
@@ -71,8 +74,10 @@ fn run() -> Result<(), Error> {
             // Draw the current frame
             Event::RedrawRequested(_) => {
                 // TODO: Handle repaint
-                let _ = framework.prepare(&window);
-                framework.render();
+                if ready {
+                    let _ = framework.prepare(&window);
+                    framework.render();
+                }
             }
             _ => (),
         }

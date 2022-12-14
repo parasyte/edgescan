@@ -67,9 +67,9 @@ impl Config {
         (self.data.window_width, self.data.window_height)
     }
 
-    pub(crate) fn set_window_size(&mut self, width: u32, height: u32) {
-        self.data.window_width = width;
-        self.data.window_height = height;
+    pub(crate) fn set_window_size(&mut self, width: u32, height: u32, scale_factor: f64) {
+        self.data.window_width = (width as f64 / scale_factor) as u32;
+        self.data.window_height = (height as f64 / scale_factor) as u32;
     }
 }
 
