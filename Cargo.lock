@@ -584,6 +584,7 @@ dependencies = [
  "error-iter",
  "log",
  "msgbox",
+ "pollster",
  "rfd",
  "ron",
  "serde",

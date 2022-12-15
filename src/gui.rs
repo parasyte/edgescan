@@ -1,38 +1,54 @@
 use dwfv::signaldb::{BitValue, SignalDB, SignalValue};
 use egui::{Context, Painter, Rect, Ui, Vec2};
-use rfd::FileDialog;
+use rfd::AsyncFileDialog;
+use std::thread::JoinHandle;
 use winit::window::Window;
 
 pub struct Gui {
-    window_open: bool,
+    enabled: bool,
+    about_open: bool,
     vcd: Option<SignalDB>,
+    file_dialog: Option<JoinHandle<Option<SignalDB>>>,
 }
 
 impl Gui {
     pub(crate) fn new() -> Self {
         Self {
-            window_open: false,
+            enabled: true,
+            about_open: false,
             vcd: None,
+            file_dialog: None,
         }
     }
 
     /// Create the UI using egui.
     pub(crate) fn ui(&mut self, ctx: &Context, window: &Window) {
+        // Poll the file dialog
+        if let Some(handle) = self.file_dialog.as_ref() {
+            if handle.is_finished() {
+                if let Ok(vcd) = self.file_dialog.take().unwrap().join() {
+                    self.vcd = vcd.or(self.vcd.take());
+                }
+                self.enabled = true;
+            }
+        }
+
         // Draw the menu bar
         egui::TopBottomPanel::top("menubar_container").show(ctx, |ui| {
+            ui.set_enabled(self.enabled);
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open").clicked() {
-                        let vcd = FileDialog::new()
+                        let dialog = AsyncFileDialog::new()
                             .set_parent(window)
-                            .add_filter("Value Change Dump", &["vcd"])
-                            .pick_file()
-                            .and_then(|path| std::fs::read(path).ok())
-                            .and_then(|buf| SignalDB::from_vcd(&buf[..]).ok());
+                            .add_filter("Value Change Dump", &["vcd"]);
 
-                        if let Some(db) = vcd {
-                            self.vcd = Some(db);
-                        }
+                        self.file_dialog = Some(std::thread::spawn(move || {
+                            pollster::block_on(dialog.pick_file())
+                                .and_then(|handle| std::fs::read(handle.path()).ok())
+                                .and_then(|buf| SignalDB::from_vcd(&buf[..]).ok())
+                        }));
+                        self.enabled = false;
 
                         ui.close_menu();
                     }
@@ -44,7 +60,7 @@ impl Gui {
                 });
                 ui.menu_button("Help", |ui| {
                     if ui.button("About...").clicked() {
-                        self.window_open = true;
+                        self.about_open = true;
                         ui.close_menu();
                     }
                 });
@@ -53,6 +69,7 @@ impl Gui {
 
         // Draw the main content area
         egui::CentralPanel::default().show(ctx, |ui| {
+            ui.set_enabled(self.enabled);
             if let Some(_vcd) = self.vcd.as_ref() {
                 self.draw_vcd(ui);
             }
@@ -65,7 +82,8 @@ impl Gui {
     /// Show "About" window.
     fn about_window(&mut self, ctx: &Context) {
         egui::Window::new("About EdgeScan")
-            .open(&mut self.window_open)
+            .open(&mut self.about_open)
+            .enabled(self.enabled)
             .collapsible(false)
             .default_pos((175.0, 175.0))
             .fixed_size((350.0, 100.0))
