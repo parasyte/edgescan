@@ -590,6 +590,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "thiserror",
+ "wgpu",
  "winit",
  "winit_input_helper",
 ]

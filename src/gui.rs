@@ -145,7 +145,7 @@ impl Gui {
                         // Draw waveform
                         // TODO: Draw a timeline header
                         {
-                            let zoom = 35.0; // TODO: Zoom with CTRL + Mousewheel
+                            let zoom = 5.0; // TODO: Zoom with CTRL + Mousewheel
                             let sample_size = Vec2::new(zoom, size.y);
                             for ts in vcd.get_timestamps() {
                                 let (mut rect, _) = ui.allocate_exact_size(sample_size, sense);

@@ -29,7 +29,14 @@ impl Framework {
     ) -> Self {
         let egui_ctx = Context::default();
         let mut egui_state = egui_winit::State::new(event_loop);
-        let painter = Painter::new(WgpuConfiguration::default(), 1, 0);
+        let painter = {
+            let wgpu_config = WgpuConfiguration {
+                present_mode: wgpu::PresentMode::AutoNoVsync,
+                ..Default::default()
+            };
+
+            Painter::new(wgpu_config, 1, 0)
+        };
         let gui = Gui::new();
 
         if let Some(max_texture_size) = painter.max_texture_side() {

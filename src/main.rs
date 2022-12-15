@@ -1,14 +1,18 @@
-use edgescan::config::Config;
-use edgescan::framework::Framework;
+use edgescan::{config::Config, framework::Framework};
 use error_iter::ErrorIter;
 use log::error;
 use std::process::ExitCode;
 use thiserror::Error;
-use winit::dpi::LogicalSize;
-use winit::event::{Event, StartCause};
-use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::WindowBuilder;
+use winit::{
+    dpi::LogicalSize,
+    event::{Event, StartCause},
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+};
 use winit_input_helper::WinitInputHelper;
+
+#[cfg(target_os = "macos")]
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Error)]
 enum Error {
@@ -35,9 +39,14 @@ fn run() -> Result<(), Error> {
     };
 
     let mut framework = Framework::new(&event_loop, window.scale_factor(), config);
-    let mut ready = false;
+
+    #[cfg(target_os = "macos")]
+    let mut now = Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
+        // Wait for the next event
+        *control_flow = ControlFlow::Wait;
+
         // Handle input events
         if input.update(&event) {
             // Close events
@@ -56,7 +65,9 @@ fn run() -> Result<(), Error> {
             }
 
             // Update internal state and request a redraw
-            window.request_redraw();
+            if framework.prepare(&window).is_zero() {
+                window.request_redraw();
+            }
         }
 
         match event {
@@ -64,21 +75,31 @@ fn run() -> Result<(), Error> {
                 // SAFETY: `window` is guaranteed to live at least as long as the
                 // `event_loop` run scope.
                 unsafe { framework.set_window(&window) };
-                ready = true;
             }
             Event::WindowEvent { event, .. } => {
                 // Update egui inputs
-                // TODO: Handle repaint
-                let _ = framework.handle_event(&event);
-            }
-            // Draw the current frame
-            Event::RedrawRequested(_) => {
-                // TODO: Handle repaint
-                if ready {
-                    let _ = framework.prepare(&window);
-                    framework.render();
+                if framework.handle_event(&event).repaint {
+                    window.request_redraw();
                 }
             }
+            Event::RedrawRequested(_) => {
+                // Draw the current frame
+                framework.render();
+            }
+            Event::RedrawEventsCleared => {
+                // TODO: `ControlFlow::Wait` doesn't work on macOS.
+                // See: https://github.com/rust-windowing/winit/issues/1985
+                #[cfg(target_os = "macos")]
+                {
+                    let target = Duration::from_secs_f64(1.0 / 60.0);
+                    let actual = now.elapsed();
+                    if target > actual {
+                        std::thread::sleep(target - actual);
+                    }
+                    now = Instant::now();
+                }
+            }
+
             _ => (),
         }
     });
