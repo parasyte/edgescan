@@ -1,18 +1,18 @@
 use edgescan::{config::Config, framework::Framework};
 use error_iter::ErrorIter;
 use log::error;
-use std::process::ExitCode;
+use std::{process::ExitCode, time::Duration};
 use thiserror::Error;
 use winit::{
     dpi::LogicalSize,
     event::{Event, StartCause},
     event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
+    window::{Window, WindowBuilder},
 };
 use winit_input_helper::WinitInputHelper;
 
 #[cfg(target_os = "macos")]
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 #[derive(Debug, Error)]
 enum Error {
@@ -39,14 +39,12 @@ fn run() -> Result<(), Error> {
     };
 
     let mut framework = Framework::new(&event_loop, window.scale_factor(), config);
+    let mut repaint = Duration::ZERO;
 
     #[cfg(target_os = "macos")]
     let mut now = Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
-        // Wait for the next event
-        *control_flow = ControlFlow::Wait;
-
         // Handle input events
         if input.update(&event) {
             // Close events
@@ -65,9 +63,8 @@ fn run() -> Result<(), Error> {
             }
 
             // Update internal state and request a redraw
-            if framework.prepare(&window).is_zero() {
-                window.request_redraw();
-            }
+            repaint = framework.prepare(&window);
+            maybe_redraw(control_flow, &window, repaint.is_zero());
         }
 
         match event {
@@ -78,13 +75,16 @@ fn run() -> Result<(), Error> {
             }
             Event::WindowEvent { event, .. } => {
                 // Update egui inputs
-                if framework.handle_event(&event).repaint {
-                    window.request_redraw();
-                }
+                maybe_redraw(
+                    control_flow,
+                    &window,
+                    framework.handle_event(&event).repaint,
+                );
             }
             Event::RedrawRequested(_) => {
                 // Draw the current frame
                 framework.render();
+                maybe_redraw(control_flow, &window, repaint.is_zero());
             }
             Event::RedrawEventsCleared => {
                 // TODO: `ControlFlow::Wait` doesn't work on macOS.
@@ -103,6 +103,15 @@ fn run() -> Result<(), Error> {
             _ => (),
         }
     });
+}
+
+fn maybe_redraw(control_flow: &mut ControlFlow, window: &Window, do_it: bool) {
+    if do_it {
+        window.request_redraw();
+        *control_flow = ControlFlow::Poll;
+    } else {
+        *control_flow = ControlFlow::Wait;
+    }
 }
 
 fn handle_error(err: Error) {
