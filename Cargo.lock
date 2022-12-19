@@ -616,11 +616,9 @@ checksum = "d3a6edfac4c02455f5024dc7cda997629b94748571935773d1a0cfab8213c80a"
 dependencies = [
  "bytemuck",
  "egui",
- "pollster",
  "tracing",
  "type-map",
  "wgpu",
- "winit",
 ]
 
 [[package]]
