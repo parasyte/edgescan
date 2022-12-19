@@ -585,6 +585,7 @@ dependencies = [
  "log",
  "msgbox",
  "pollster",
+ "raw-window-handle 0.5.0",
  "rfd",
  "ron",
  "serde",

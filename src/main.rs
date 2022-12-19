@@ -1,11 +1,11 @@
-use edgescan::{config::Config, framework::Framework};
+use edgescan::{config::Config, framework::Framework, gpu::Gpu};
 use error_iter::ErrorIter;
 use log::error;
 use std::{process::ExitCode, time::Duration};
 use thiserror::Error;
 use winit::{
     dpi::LogicalSize,
-    event::{Event, StartCause},
+    event::Event,
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
@@ -19,6 +19,9 @@ enum Error {
     #[error("Unable to create window")]
     Window(#[from] winit::error::OsError),
 
+    #[error("Unable to find a suitable GPU")]
+    Gpu(#[from] edgescan::gpu::Error),
+
     #[error("Configuration error")]
     Config(#[from] edgescan::config::Error),
 }
@@ -29,16 +32,29 @@ fn run() -> Result<(), Error> {
     let config = Config::new()?;
     let event_loop = EventLoop::new();
     let mut input = WinitInputHelper::new();
-    let window = {
+    let (window, mut framework) = {
         let (width, height) = config.get_window_size();
 
-        WindowBuilder::new()
+        let window = WindowBuilder::new()
             .with_title("EdgeScan")
             .with_inner_size(LogicalSize::new(width, height))
-            .build(&event_loop)?
+            .build(&event_loop)?;
+
+        // SAFETY: The window is moved into the event_loop run closure, ensuring it lives at least
+        // as long as `gpu`
+        let gpu = unsafe { Gpu::new(&window, window.inner_size())? };
+
+        let framework = Framework::new(
+            &event_loop,
+            window.inner_size(),
+            window.scale_factor(),
+            config,
+            gpu,
+        );
+
+        (window, framework)
     };
 
-    let mut framework = Framework::new(&event_loop, window.scale_factor(), config);
     let mut repaint = Duration::ZERO;
 
     #[cfg(target_os = "macos")]
@@ -59,7 +75,7 @@ fn run() -> Result<(), Error> {
 
             // Resize the window
             if let Some(size) = input.window_resized() {
-                framework.resize(size.width, size.height, window.scale_factor());
+                framework.resize(size, window.scale_factor());
             }
 
             // Update internal state and request a redraw
@@ -68,11 +84,6 @@ fn run() -> Result<(), Error> {
         }
 
         match event {
-            Event::NewEvents(StartCause::Init) => {
-                // SAFETY: `window` is guaranteed to live at least as long as the
-                // `event_loop` run scope.
-                unsafe { framework.set_window(&window) };
-            }
             Event::WindowEvent { event, .. } => {
                 // Update egui inputs
                 maybe_redraw(
@@ -83,7 +94,11 @@ fn run() -> Result<(), Error> {
             }
             Event::RedrawRequested(_) => {
                 // Draw the current frame
-                framework.render();
+                if let Err(err) = framework.render() {
+                    error!("framework.render() failed: {err}");
+                    *control_flow = ControlFlow::Exit;
+                    return;
+                }
                 maybe_redraw(control_flow, &window, repaint.is_zero());
             }
             Event::RedrawEventsCleared => {

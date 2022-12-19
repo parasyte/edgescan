@@ -1,18 +1,21 @@
+use crate::gpu::{Error, Gpu};
 use crate::{config::Config, gui::Gui};
 use egui::{ClippedPrimitive, Context, TexturesDelta};
-use egui_wgpu::{winit::Painter, WgpuConfiguration};
+use egui_wgpu::renderer::{Renderer, ScreenDescriptor};
 use egui_winit::EventResponse;
 use std::time::Duration;
-use winit::{event_loop::EventLoopWindowTarget, window::Window};
+use winit::{dpi::PhysicalSize, event_loop::EventLoopWindowTarget, window::Window};
 
 /// Manages all state required for rendering egui.
 pub struct Framework {
     // State for egui.
     egui_ctx: Context,
     egui_state: egui_winit::State,
-    painter: Painter,
+    screen_descriptor: ScreenDescriptor,
+    renderer: Renderer,
     clipped_primitives: Vec<ClippedPrimitive>,
     textures_delta: TexturesDelta,
+    gpu: Gpu,
 
     // Configuration for the app.
     config: Config,
@@ -24,44 +27,39 @@ pub struct Framework {
 impl Framework {
     pub fn new<T>(
         event_loop: &EventLoopWindowTarget<T>,
+        size: PhysicalSize<u32>,
         scale_factor: f64,
         config: Config,
+        gpu: Gpu,
     ) -> Self {
+        let width = size.width;
+        let height = size.height;
+        let scale_factor = scale_factor as f32;
+        let max_texture_size = gpu.device.limits().max_texture_dimension_2d as usize;
+
         let egui_ctx = Context::default();
         let mut egui_state = egui_winit::State::new(event_loop);
-        let painter = {
-            let wgpu_config = WgpuConfiguration {
-                present_mode: wgpu::PresentMode::AutoNoVsync,
-                ..Default::default()
-            };
+        egui_state.set_max_texture_side(max_texture_size);
+        egui_state.set_pixels_per_point(scale_factor);
 
-            Painter::new(wgpu_config, 1, 0)
+        let screen_descriptor = ScreenDescriptor {
+            size_in_pixels: [width, height],
+            pixels_per_point: scale_factor,
         };
+        let renderer = Renderer::new(&gpu.device, gpu.texture_format, None, 1);
         let gui = Gui::new();
-
-        if let Some(max_texture_size) = painter.max_texture_side() {
-            egui_state.set_max_texture_side(max_texture_size);
-        }
-        egui_state.set_pixels_per_point(scale_factor as f32);
 
         Self {
             egui_ctx,
             egui_state,
-            painter,
+            screen_descriptor,
+            renderer,
             clipped_primitives: vec![],
             textures_delta: TexturesDelta::default(),
+            gpu,
             config,
             gui,
         }
-    }
-
-    /// Set the window reference for `egui`.
-    ///
-    /// # Safety
-    ///
-    /// The window reference lifetime must outlive `Self`.
-    pub unsafe fn set_window(&mut self, window: &Window) {
-        self.painter.set_window(Some(window));
     }
 
     pub fn config(&mut self) -> &mut Config {
@@ -74,10 +72,13 @@ impl Framework {
     }
 
     /// Resize egui.
-    pub fn resize(&mut self, width: u32, height: u32, scale_factor: f64) {
+    pub fn resize(&mut self, window_size: PhysicalSize<u32>, scale_factor: f64) {
+        let PhysicalSize { width, height } = window_size;
         if width > 0 && height > 0 {
+            self.gpu.resize(window_size);
             self.config.set_window_size(width, height, scale_factor);
-            self.painter.on_window_resized(width, height);
+            self.screen_descriptor.size_in_pixels = [width, height];
+            self.screen_descriptor.pixels_per_point = scale_factor as f32;
         }
     }
 
@@ -99,14 +100,57 @@ impl Framework {
         output.repaint_after
     }
 
-    pub fn render(&mut self) {
-        let pixels_per_point = self.egui_state.pixels_per_point();
+    pub fn render(&mut self) -> Result<(), Error> {
+        let (mut encoder, frame) = self.gpu.prepare()?;
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
-        self.painter.paint_and_update_textures(
-            pixels_per_point,
-            egui::Rgba::BLACK,
+        // Upload all resources to the GPU.
+        for (id, image_delta) in &self.textures_delta.set {
+            self.renderer
+                .update_texture(&self.gpu.device, &self.gpu.queue, *id, image_delta);
+        }
+        self.renderer.update_buffers(
+            &self.gpu.device,
+            &self.gpu.queue,
+            &mut encoder,
             &self.clipped_primitives,
-            &self.textures_delta,
+            &self.screen_descriptor,
         );
+
+        // Render egui with WGPU
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("egui"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
+
+            self.renderer.render(
+                &mut rpass,
+                &self.clipped_primitives,
+                &self.screen_descriptor,
+            );
+        }
+
+        // Cleanup
+        let textures = std::mem::take(&mut self.textures_delta);
+        for id in &textures.free {
+            self.renderer.free_texture(id);
+        }
+
+        // Complete frame
+        self.gpu.queue.submit(Some(encoder.finish()));
+        frame.present();
+
+        Ok(())
     }
 }
