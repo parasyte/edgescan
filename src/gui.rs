@@ -1,8 +1,8 @@
 use dwfv::signaldb::{BitValue, SignalDB, SignalValue};
 use egui::{Context, Painter, Rect, Ui, Vec2};
+use raw_window_handle::HasRawWindowHandle;
 use rfd::AsyncFileDialog;
 use std::thread::JoinHandle;
-use winit::window::Window;
 
 pub struct Gui {
     enabled: bool,
@@ -22,7 +22,7 @@ impl Gui {
     }
 
     /// Create the UI using egui.
-    pub(crate) fn ui(&mut self, ctx: &Context, window: &Window) {
+    pub(crate) fn ui<W: HasRawWindowHandle>(&mut self, ctx: &Context, window: &W) {
         // Poll the file dialog
         if let Some(handle) = self.file_dialog.as_ref() {
             if handle.is_finished() {
