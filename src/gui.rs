@@ -70,9 +70,7 @@ impl Gui {
         // Draw the main content area
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.set_enabled(self.enabled);
-            if let Some(_vcd) = self.vcd.as_ref() {
-                self.draw_vcd(ui);
-            }
+            self.draw_vcd(ui);
         });
 
         // Draw the windows (if requested by the user)
@@ -105,7 +103,11 @@ impl Gui {
 
     /// Draw the VCD waveforms.
     fn draw_vcd(&self, ui: &mut Ui) {
-        let vcd = self.vcd.as_ref().unwrap();
+        let vcd = match self.vcd.as_ref() {
+            Some(vcd) => vcd,
+            None => return,
+        };
+
         let signals: Vec<_> = vcd
             .get_signal_ids()
             .into_iter()
