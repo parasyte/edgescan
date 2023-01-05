@@ -1,8 +1,8 @@
 use dwfv::signaldb::{BitValue, SignalDB, SignalValue};
 use egui::{Context, Painter, Rect, Ui, Vec2};
-use raw_window_handle::HasRawWindowHandle;
 use rfd::AsyncFileDialog;
 use std::thread::JoinHandle;
+use winit::window::Window;
 
 pub struct Gui {
     enabled: bool,
@@ -22,7 +22,7 @@ impl Gui {
     }
 
     /// Create the UI using egui.
-    pub(crate) fn ui<W: HasRawWindowHandle>(&mut self, ctx: &Context, window: &W) {
+    pub(crate) fn ui(&mut self, ctx: &Context, window: &Window) {
         // Poll the file dialog
         if let Some(handle) = self.file_dialog.as_ref() {
             if handle.is_finished() {
@@ -136,28 +136,20 @@ impl Gui {
                         // Draw background for waveform column
                         // TODO: Only draw the odd rows
                         // Should also draw the full row all the way across all columns.
-                        {
-                            let rect = Rect::from_min_size(
-                                rect.right_top(),
-                                Vec2::new(f32::INFINITY, rect.max.y),
-                            );
-                            ui.painter().rect_filled(rect.expand(3.0), 0.0, bg_color);
-                        }
+                        let rect_bg = Rect::from_min_size(
+                            rect.right_top(),
+                            Vec2::new(f32::INFINITY, rect.max.y),
+                        );
+                        ui.painter().rect_filled(rect_bg.expand(3.0), 0.0, bg_color);
 
                         // Draw waveform
                         // TODO: Draw a timeline header
-                        {
-                            let zoom = 5.0; // TODO: Zoom with CTRL + Mousewheel
-                            let sample_size = Vec2::new(zoom, size.y);
-                            for ts in vcd.get_timestamps() {
-                                let (mut rect, _) = ui.allocate_exact_size(sample_size, sense);
-                                rect.set_width(zoom + spacing_x);
-                                draw_waveform_sample(
-                                    ui.painter(),
-                                    rect,
-                                    vcd.value_at(id, ts).unwrap(),
-                                );
-                            }
+                        let zoom = 5.0; // TODO: Zoom with CTRL + Mousewheel
+                        let sample_size = Vec2::new(zoom, size.y);
+                        for ts in vcd.get_timestamps() {
+                            let (mut rect, _) = ui.allocate_exact_size(sample_size, sense);
+                            rect.set_width(zoom + spacing_x);
+                            draw_waveform_sample(ui.painter(), rect, vcd.value_at(id, ts).unwrap());
                         }
 
                         // Draw background for signal name column
