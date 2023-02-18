@@ -1,5 +1,5 @@
 use dwfv::signaldb::{BitValue, SignalDB, SignalValue};
-use egui::{Context, Painter, Rect, Ui, Vec2};
+use egui::{Context, Painter, Pos2, Rect, Ui, Vec2};
 use rfd::AsyncFileDialog;
 use std::thread::JoinHandle;
 use winit::window::Window;
@@ -127,23 +127,25 @@ impl Gui {
                         let (mut rect, _) = ui.allocate_exact_size(size, sense);
                         let spacing_x = ui.spacing().item_spacing.x;
 
-                        let bg_color = if i % 2 == 0 {
-                            ui.style().visuals.window_fill
-                        } else {
-                            ui.style().visuals.faint_bg_color
-                        };
+                        let bg_color = ui.style().visuals.window_fill;
+                        let highlight_color = egui::Color32::from_additive_luminance(15);
 
                         // Draw background for waveform column
                         // TODO: Only draw the odd rows
                         // Should also draw the full row all the way across all columns.
-                        let rect_bg = Rect::from_min_size(
+                        let rect_bg = Rect::from_min_max(
                             rect.right_top(),
-                            Vec2::new(f32::INFINITY, rect.max.y),
+                            Pos2::new(ui.available_width(), rect.max.y),
                         );
-                        ui.painter().rect_filled(rect_bg.expand(3.0), 0.0, bg_color);
+                        let painter = ui.painter();
+                        painter.rect_filled(rect_bg.expand(3.0), 0.0, bg_color);
+                        if i % 2 != 0 {
+                            painter.rect_filled(rect_bg.expand(3.0), 0.0, highlight_color);
+                        }
 
                         // Draw waveform
                         // TODO: Draw a timeline header
+                        // TODO: Clip to window
                         let zoom = 5.0; // TODO: Zoom with CTRL + Mousewheel
                         let sample_size = Vec2::new(zoom, size.y);
                         for ts in vcd.get_timestamps() {
@@ -159,15 +161,20 @@ impl Gui {
                         rect.min.x = 0.0;
                         rect.max.x = spacing_x + size.x;
                         painter.rect_filled(rect.expand(3.0), 0.0, bg_color);
+                        if i % 2 != 0 {
+                            painter.rect_filled(rect.expand(3.0), 0.0, highlight_color);
+                        }
 
                         // Draw signal name with fixed X position and width
-                        let text_galley = egui::WidgetText::from(name)
-                            .into_text_job(
-                                ui.style(),
-                                egui::FontSelection::Default,
-                                egui::Align::LEFT,
-                            )
-                            .into_galley(&ui.fonts());
+                        let text_galley = ui.fonts(|fonts| {
+                            egui::WidgetText::from(name)
+                                .into_text_job(
+                                    ui.style(),
+                                    egui::FontSelection::Default,
+                                    egui::Align::LEFT,
+                                )
+                                .into_galley(fonts)
+                        });
                         rect.min.x = spacing_x;
                         painter.galley_with_color(
                             rect.min,
@@ -184,14 +191,16 @@ fn get_max_string_size<'a>(ui: &Ui, strings: impl Iterator<Item = &'a String>) -
     let spacing = ui.spacing();
 
     strings.fold(Vec2::ZERO, |width, text| {
-        let galley = ui.fonts().layout_no_wrap(
-            text.to_string(),
-            egui::TextStyle::Body.resolve(ui.style()),
-            egui::Color32::TEMPORARY_COLOR,
-        );
+        let galley = ui.fonts(|fonts| {
+            fonts.layout_no_wrap(
+                text.to_string(),
+                egui::TextStyle::Body.resolve(ui.style()),
+                egui::Color32::TEMPORARY_COLOR,
+            )
+        });
 
         width.max(Vec2::new(
-            galley.rect.width() + spacing.item_spacing.x,
+            (galley.rect.width() + spacing.item_spacing.x).round(),
             galley.rect.height(),
         ))
     })

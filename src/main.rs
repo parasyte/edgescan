@@ -1,6 +1,7 @@
 use edgescan::{config::Config, framework::Framework, gpu::Gpu};
-use error_iter::ErrorIter;
+use error_iter::ErrorIter as _;
 use log::error;
+use rfd::{MessageButtons, MessageDialog, MessageLevel};
 use std::{process::ExitCode, time::Duration};
 use thiserror::Error;
 use winit::{
@@ -25,8 +26,6 @@ enum Error {
     #[error("Configuration error")]
     Config(#[from] edgescan::config::Error),
 }
-
-impl ErrorIter for Error {}
 
 fn run() -> Result<(), Error> {
     let config = Config::new()?;
@@ -64,7 +63,7 @@ fn run() -> Result<(), Error> {
         // Handle input events
         if input.update(&event) {
             // Close events
-            if input.quit() {
+            if input.close_requested() {
                 if let Err(err) = framework.config().save() {
                     handle_error(Error::from(err));
                 }
@@ -136,7 +135,12 @@ fn handle_error(err: Error) {
     }
 
     // TODO: Make fatal errors nice
-    msgbox::create("Error", &format!("{err}"), msgbox::IconType::Error).unwrap();
+    MessageDialog::new()
+        .set_title("Error")
+        .set_description(&err.to_string())
+        .set_level(MessageLevel::Error)
+        .set_buttons(MessageButtons::Ok)
+        .show();
 }
 
 fn main() -> ExitCode {

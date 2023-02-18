@@ -1,5 +1,4 @@
 use directories::ProjectDirs;
-use error_iter::ErrorIter;
 use serde_derive::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -14,8 +13,6 @@ pub enum Error {
     #[error("Failed to serialize config to file")]
     Serialize(#[from] ron::Error),
 }
-
-impl ErrorIter for Error {}
 
 #[derive(Debug)]
 pub struct Config {

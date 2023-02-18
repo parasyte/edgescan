@@ -11,10 +11,13 @@ pub enum Error {
     AdapterNotFound,
     /// Equivalent to [`wgpu::RequestDeviceError`]
     #[error("No wgpu::Device found.")]
-    DeviceNotFound(wgpu::RequestDeviceError),
+    DeviceNotFound(#[from] wgpu::RequestDeviceError),
     /// Equivalent to [`wgpu::SurfaceError`]
     #[error("The GPU failed to acquire a surface frame.")]
-    Surface(wgpu::SurfaceError),
+    Surface(#[from] wgpu::SurfaceError),
+    /// Equivalent to [`wgpu::CreateSurfaceError`]
+    #[error("Unable to create a surface.")]
+    CreateSurface(#[from] wgpu::CreateSurfaceError),
 }
 
 pub struct Gpu {
@@ -36,8 +39,11 @@ impl Gpu {
         window: &W,
         window_size: PhysicalSize<u32>,
     ) -> Result<Self, Error> {
-        let instance = wgpu::Instance::new(wgpu::Backends::PRIMARY);
-        let surface = instance.create_surface(window);
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::PRIMARY,
+            ..Default::default()
+        });
+        let surface = instance.create_surface(window)?;
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
@@ -45,11 +51,11 @@ impl Gpu {
         });
         let adapter = pollster::block_on(adapter).ok_or(Error::AdapterNotFound)?;
         let (device, queue) =
-            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None))
-                .map_err(Error::DeviceNotFound)?;
+            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None))?;
 
         let texture_format = wgpu::TextureFormat::Bgra8UnormSrgb;
-        let alpha_mode = surface.get_supported_alpha_modes(&adapter)[0];
+        let surface_capabilities = surface.get_capabilities(&adapter);
+        let alpha_mode = surface_capabilities.alpha_modes[0];
 
         let gpu = Self {
             device,
@@ -74,6 +80,7 @@ impl Gpu {
                 height: self.window_size.height,
                 present_mode: wgpu::PresentMode::AutoNoVsync,
                 alpha_mode: self.alpha_mode,
+                view_formats: vec![],
             },
         )
     }
@@ -96,8 +103,7 @@ impl Gpu {
                     self.surface.get_current_texture()
                 }
                 err => Err(err),
-            })
-            .map_err(Error::Surface)?;
+            })?;
         let encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
